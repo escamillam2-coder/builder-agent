@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>BUILDER — Houston Home AI Project Manager</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, "Inter", "Segoe UI", sans-serif; height: 100dvh; display: flex; flex-direction: column; background: #f0f4f8; overflow: hidden; }
+  @keyframes bdot { 0%,80%,100%{opacity:.3;transform:scale(1)} 40%{opacity:1;transform:scale(1.4)} }
+  @keyframes fadein { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+
+  /* ── Header ── */
+  #header { background: #1F4E79; padding: 12px 16px; flex-shrink: 0; box-shadow: 0 2px 12px rgba(0,0,0,0.25); }
+  #header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  #logo { color: #fff; font-size: 18px; font-weight: 800; letter-spacing: 0.3px; }
+  #subtitle { color: rgba(255,255,255,0.55); font-size: 10px; margin-top: 1px; }
+  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; flex-shrink: 0; }
+  #role-row { display: flex; gap: 6px; }
+  .role-btn { flex: 1; padding: 7px 4px; border-radius: 8px; border: 1.5px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.08); color: #fff; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+  .role-btn.active { border-color: #fff; background: #fff; color: #1F4E79; }
+
+  /* ── Phase bar ── */
+  #phase-bar-wrap { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 8px 14px; flex-shrink: 0; }
+  #phase-bar-labels { display: flex; justify-content: space-between; margin-bottom: 5px; }
+  #phase-bar-labels span { font-size: 10px; font-weight: 700; }
+  #phase-bar-labels span:first-child { color: #888; letter-spacing: 0.4px; }
+  #phase-bar-labels span:last-child { color: #1F4E79; }
+  #phase-segments { display: flex; gap: 2px; }
+  .phase-seg { flex: 1; height: 6px; border-radius: 2px; transition: background 0.3s; }
+
+  /* ── Messages ── */
+  #messages { flex: 1; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 12px; -webkit-overflow-scrolling: touch; }
+  .msg-row { display: flex; gap: 8px; align-items: flex-start; animation: fadein 0.2s ease; }
+  .msg-row.user { flex-direction: row-reverse; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: #fff; }
+  .bubble { max-width: 78%; padding: 9px 13px; font-size: 13.5px; line-height: 1.65; }
+  .bubble.bot { background: #fff; border: 1px solid #e5e7eb; border-radius: 3px 14px 14px 14px; color: #1a1a1a; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .bubble.user { border-radius: 14px 3px 14px 14px; color: #fff; }
+  .bubble-label { font-size: 9px; font-weight: 700; opacity: 0.45; margin-bottom: 5px; letter-spacing: 0.6px; }
+  .bubble-text { white-space: pre-wrap; }
+
+  /* ── Typing indicator ── */
+  #typing-row { display: flex; gap: 8px; align-items: flex-start; }
+  #typing-bubble { background: #fff; border: 1px solid #e5e7eb; border-radius: 3px 14px 14px 14px; padding: 12px 16px; display: flex; gap: 4px; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: #2E75B6; animation: bdot 1.2s ease-in-out infinite; }
+
+  /* ── Quick actions ── */
+  #qa-wrap { background: #fff; border-top: 1px solid #e5e7eb; padding: 8px 10px; flex-shrink: 0; }
+  #qa-label { font-size: 9px; font-weight: 700; color: #bbb; margin-bottom: 6px; letter-spacing: 0.8px; padding-left: 2px; }
+  #qa-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+  #qa-row::-webkit-scrollbar { display: none; }
+  .qa-btn { padding: 7px 13px; border-radius: 18px; border: 1.5px solid; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: opacity 0.15s; min-height: 34px; }
+
+  /* ── Input ── */
+  #input-wrap { background: #fff; border-top: 1px solid #e5e7eb; padding: 10px 12px; display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+  #input-inner { flex: 1; display: flex; align-items: center; border-radius: 22px; border: 2px solid #2E75B6; background: #f5f8ff; padding: 0 14px; min-height: 44px; transition: border-color 0.15s; }
+  #role-label { font-size: 11px; font-weight: 700; margin-right: 6px; white-space: nowrap; color: #2E75B6; }
+  #chat-input { flex: 1; border: none; outline: none; background: transparent; font-size: 14px; color: #1a1a1a; padding: 10px 0; font-family: inherit; }
+  #chat-input::placeholder { color: #aaa; }
+  #send-btn { width: 44px; height: 44px; border-radius: 50%; border: none; background: #2E75B6; color: #fff; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.15s, opacity 0.15s; }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Setup banner ── */
+  #setup-banner { background: #FFF2CC; border-bottom: 2px solid #FFD700; padding: 10px 16px; font-size: 12px; color: #7c5800; line-height: 1.6; flex-shrink: 0; }
+  #setup-banner strong { font-weight: 700; }
+  #setup-banner a { color: #1F4E79; font-weight: 700; }
+  #dismiss-btn { float: right; background: none; border: none; font-size: 16px; cursor: pointer; color: #7c5800; margin-left: 8px; }
+</style>
+</head>
+<body>
+
+<!-- Setup banner — shows until API key is configured -->
+<div id="setup-banner">
+  <button id="dismiss-btn" onclick="document.getElementById('setup-banner').remove()">✕</button>
+  <strong>⚙️ Setup needed:</strong> To activate BUILDER, add your Anthropic API key in Vercel → Settings → Environment Variables → <code>ANTHROPIC_API_KEY</code>. 
+  <a href="https://console.anthropic.com" target="_blank">Get your key here →</a>
+</div>
+
+<!-- Header -->
+<div id="header">
+  <div id="header-top">
+    <div>
+      <div id="logo">🏗️ BUILDER</div>
+      <div id="subtitle">Houston Custom Home · AI Project Manager</div>
+    </div>
+    <div id="status-dot" title="Agent online"></div>
+  </div>
+  <div id="role-row">
+    <button class="role-btn active" id="role-Dad" onclick="setRole('Dad')">Dad</button>
+    <button class="role-btn" id="role-Mom" onclick="setRole('Mom')">Mom</button>
+    <button class="role-btn" id="role-Command" onclick="setRole('Command')">Command</button>
+    <button class="role-btn" id="role-General" onclick="setRole('General')">General</button>
+  </div>
+</div>
+
+<!-- Phase progress bar -->
+<div id="phase-bar-wrap">
+  <div id="phase-bar-labels">
+    <span>BUILD PROGRESS</span>
+    <span id="phase-label">Phase 2 — Foundation (Active)</span>
+  </div>
+  <div id="phase-segments"></div>
+</div>
+
+<!-- Messages -->
+<div id="messages"></div>
+
+<!-- Quick actions -->
+<div id="qa-wrap">
+  <div id="qa-label">QUICK ACTIONS</div>
+  <div id="qa-row"></div>
+</div>
+
+<!-- Input -->
+<div id="input-wrap">
+  <div id="input-inner">
+    <span id="role-label">Dad:</span>
+    <input id="chat-input" type="text" placeholder="Type what's happening on site…" autocomplete="off" />
+  </div>
+  <button id="send-btn" onclick="sendMsg()" disabled>→</button>
+</div>
+
+<script>
+// ── Configuration ─────────────────────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are BUILDER — an expert AI Project Manager for a family building a custom home in Houston, Texas. You are their General Contractor advisor, schedule manager, dependency tracker, and subcontractor accountability coach.
+
+PROJECT FACTS:
+- Home type: Single family custom home, 2 stories, 2,500–3,500 sqft
+- Location: City of Houston, TX (COH jurisdiction)
+- GC: Family acting as own GC (owner-builder)
+- Concrete poured: March 6, 2026
+- Post-tension stressing: Due March 13, 2026 (7 days after pour)
+- Foundation cure complete: April 3, 2026 (28 days)
+- Framing earliest start: April 6, 2026
+- Current phase: Phase 2 — Foundation curing (Week 2)
+
+FAMILY ROLES — adjust your tone for each:
+- DAD: On-site daily. Short sentences. Action items only. No theory.
+- MOM: Manages budget and decisions. Lead with dollar impact. No jargon.
+- COMMAND (Michael): Full oversight. Complete strategic picture. Flag system issues.
+- GENERAL: Learning mode. Warm, encouraging, educational. Coach them.
+
+HOUSTON BUILD PHASES:
+0-Pre-Construction (DONE) | 1-Site Prep (DONE) | 2-Foundation (ACTIVE) | 3-Rough Framing | 4-Rough Plumbing | 5-Rough Electrical | 6-Rough HVAC | 7-Insulation | 8-Drywall | 9-Exterior Finishes | 10-Interior Finishes | 11-Finish MEP | 12-Flooring | 13-Fixtures & Trim | 14-Final Inspections | 15-Certificate of Occupancy
+
+CRITICAL DEPENDENCY RULES (never violate):
+- No framing before 28-day foundation cure (April 3 minimum)
+- No MEP rough-in before framing inspection passes
+- No drywall before ALL THREE rough MEP inspections pass
+- No insulation before all MEP rough-ins pass
+- No final building inspection before all three trade finals pass
+- No occupancy before Certificate of Occupancy issued
+
+COH CONTACTS: 832-394-8800 | houstonpermittingcenter.org | Schedule inspections 24-48hrs in advance
+
+LONG LEAD ITEMS (order by these dates or risk delays):
+- Windows & exterior doors: Order NOW (4-10 wk lead) — needed at framing start
+- Kitchen cabinets: Order by April 1 (8-12 wk lead)
+- Engineered flooring: Order by June 1 (3-6 wk lead)
+- Specialty fixtures: Order by May 1 (4-8 wk lead)
+
+CONTRACTOR RULES:
+- Always hold 10% retention on every payment
+- No verbal change orders — document everything in writing
+- Verify all TX licenses at tdlr.texas.gov before hiring
+- Get certificate of insurance naming family as additional insured
+
+WHEN A DELAY OR CHANGE IS REPORTED — always do all 6:
+1. Acknowledge clearly what happened
+2. Show ripple impact on downstream phases with specific dates
+3. Suggest 2-3 recovery options with tradeoffs
+4. Identify exactly who is affected (which contractors, which family members)
+5. Offer to draft a stakeholder message they can send
+6. State the budget impact (cost increase, cost neutral, or savings)
+
+Keep responses focused and practical. Use **bold** for key terms and dates. Use line breaks for readability. Never overwhelm — give the most important thing first.`;
+
+const PHASES = [
+  {n:"Pre-Construction",s:"complete"},
+  {n:"Site Prep",s:"complete"},
+  {n:"Foundation",s:"active"},
+  {n:"Rough Framing",s:"upcoming"},
+  {n:"Rough Plumbing",s:"upcoming"},
+  {n:"Rough Electrical",s:"upcoming"},
+  {n:"Rough HVAC",s:"upcoming"},
+  {n:"Insulation",s:"upcoming"},
+  {n:"Drywall",s:"upcoming"},
+  {n:"Exterior",s:"upcoming"},
+  {n:"Interior",s:"upcoming"},
+  {n:"Finish MEP",s:"upcoming"},
+  {n:"Flooring",s:"upcoming"},
+  {n:"Fixtures",s:"upcoming"},
+  {n:"Finals",s:"upcoming"},
+  {n:"Move In 🏠",s:"upcoming"},
+];
+
+const ROLES = {
+  Dad:     {badge:"#2E75B6", bg:"#1F4E79", light:"#dbeafe"},
+  Mom:     {badge:"#16a34a", bg:"#375623", light:"#dcfce7"},
+  Command: {badge:"#ea580c", bg:"#7c2d12", light:"#ffedd5"},
+  General: {badge:"#6b7280", bg:"#374151", light:"#f3f4f6"},
+};
+
+const QA = [
+  {l:"🔎 Status update",   m:"Give me a full project status update — current phase, what's next, and what we should focus on right now."},
+  {l:"⚠️ Report a delay",  m:"I need to report a delay or issue on the build. Help me understand the ripple impact and recovery options."},
+  {l:"📋 Next 2 weeks",    m:"What are all the tasks and decisions we need to handle in the next 2 weeks?"},
+  {l:"🏗️ Contractors",    m:"Which contractors do I need to confirm, follow up with, or schedule right now?"},
+  {l:"🔍 Inspection prep", m:"Walk me through what I need to prepare and verify before our next City of Houston inspection."},
+  {l:"📢 Draft message",   m:"Help me draft a project update message for our stakeholders and contractors."},
+  {l:"💰 Budget check",    m:"What budget categories should I be watching most closely right now and why?"},
+  {l:"📦 Order now?",      m:"What long-lead items should I be ordering right now to avoid delays later in the build?"},
+  {l:"🪵 Windows ordered?",m:"We haven't ordered windows yet. What do I need to know and do right now?"},
+  {l:"📐 What is a takeoff?",m:"Can you explain what a material takeoff is and how it helps us as our own GC?"},
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let currentRole = "Dad";
+let history = [];
+let busy = false;
+
+// ── Phase bar ─────────────────────────────────────────────────────────────────
+function buildPhaseBar() {
+  const container = document.getElementById("phase-segments");
+  PHASES.forEach(p => {
+    const seg = document.createElement("div");
+    seg.className = "phase-seg";
+    seg.title = p.n;
+    seg.style.background = p.s === "complete" ? "#16a34a" : p.s === "active" ? "#2E75B6" : "#e5e7eb";
+    container.appendChild(seg);
+  });
+}
+
+// ── Quick actions ─────────────────────────────────────────────────────────────
+function buildQA() {
+  const row = document.getElementById("qa-row");
+  QA.forEach(a => {
+    const btn = document.createElement("button");
+    btn.className = "qa-btn";
+    btn.id = "qa-" + a.l;
+    btn.textContent = a.l;
+    btn.onclick = () => sendMsg(a.m);
+    styleQABtn(btn);
+    row.appendChild(btn);
+  });
+}
+
+function styleQABtn(btn) {
+  const rc = ROLES[currentRole];
+  btn.style.borderColor = rc.badge;
+  btn.style.background = rc.light;
+  btn.style.color = rc.bg;
+  btn.style.opacity = busy ? "0.4" : "1";
+  btn.style.cursor = busy ? "not-allowed" : "pointer";
+}
+
+function refreshQAStyles() {
+  QA.forEach(a => {
+    const btn = document.getElementById("qa-" + a.l);
+    if (btn) styleQABtn(btn);
+  });
+}
+
+// ── Role switching ────────────────────────────────────────────────────────────
+function setRole(r) {
+  currentRole = r;
+  const rc = ROLES[r];
+  document.querySelectorAll(".role-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById("role-" + r).classList.add("active");
+  document.getElementById("role-label").textContent = r + ":";
+  document.getElementById("role-label").style.color = rc.badge;
+  document.getElementById("input-inner").style.borderColor = rc.badge;
+  if (!busy) document.getElementById("send-btn").style.background = rc.badge;
+  refreshQAStyles();
+}
+
+// ── Message rendering ─────────────────────────────────────────────────────────
+function addMessage(role, text, speaker) {
+  const isUser = role === "user";
+  const rc = isUser ? ROLES[speaker] : null;
+  const msgs = document.getElementById("messages");
+
+  const row = document.createElement("div");
+  row.className = "msg-row" + (isUser ? " user" : "");
+
+  const av = document.createElement("div");
+  av.className = "avatar";
+  av.style.background = isUser ? rc.badge : "#1F4E79";
+  av.textContent = isUser ? speaker[0] : "B";
+
+  const bub = document.createElement("div");
+  bub.className = "bubble " + (isUser ? "user" : "bot");
+  if (isUser) bub.style.background = rc.bg;
+
+  const label = document.createElement("div");
+  label.className = "bubble-label";
+  label.textContent = isUser ? speaker.toUpperCase() : "BUILDER";
+
+  const content = document.createElement("div");
+  content.className = "bubble-text";
+  content.innerHTML = text
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n/g, "<br>");
+
+  bub.appendChild(label);
+  bub.appendChild(content);
+  row.appendChild(av);
+  row.appendChild(bub);
+  msgs.appendChild(row);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function showTyping() {
+  const msgs = document.getElementById("messages");
+  const row = document.createElement("div");
+  row.id = "typing-row";
+  row.className = "msg-row";
+
+  const av = document.createElement("div");
+  av.className = "avatar";
+  av.style.background = "#1F4E79";
+  av.textContent = "B";
+
+  const bub = document.createElement("div");
+  bub.id = "typing-bubble";
+  [0,1,2].forEach(i => {
+    const d = document.createElement("div");
+    d.className = "dot";
+    d.style.animationDelay = `${i * 0.2}s`;
+    bub.appendChild(d);
+  });
+
+  row.appendChild(av);
+  row.appendChild(bub);
+  msgs.appendChild(row);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function hideTyping() {
+  document.getElementById("typing-row")?.remove();
+}
+
+// ── Busy state ────────────────────────────────────────────────────────────────
+function setBusy(val) {
+  busy = val;
+  const btn = document.getElementById("send-btn");
+  btn.disabled = val;
+  btn.style.background = val ? "#9ca3af" : ROLES[currentRole].badge;
+  document.getElementById("chat-input").disabled = val;
+  refreshQAStyles();
+}
+
+// ── Send message ──────────────────────────────────────────────────────────────
+async function sendMsg(text) {
+  const input = document.getElementById("chat-input");
+  const msg = (text !== undefined ? text : input.value).trim();
+  if (!msg || busy) return;
+  input.value = "";
+
+  addMessage("user", msg, currentRole);
+  history.push({ role: "user", content: `[Speaking as: ${currentRole}]\n\n${msg}` });
+
+  setBusy(true);
+  showTyping();
+
+  try {
+    // In production this goes through your backend proxy
+    // For now it calls Anthropic directly (works when deployed on Vercel with API key)
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": window.ANTHROPIC_API_KEY || "",
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-calls": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: history
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `API error ${res.status}`);
+    }
+
+    const data = await res.json();
+    const reply = data.content?.map(c => c.text || "").join("") || "No response received.";
+    hideTyping();
+    addMessage("assistant", reply, "BUILDER");
+    history.push({ role: "assistant", content: reply });
+
+  } catch (e) {
+    hideTyping();
+    const isKeyError = e.message?.includes("401") || e.message?.includes("API key") || e.message?.includes("authentication");
+    const errMsg = isKeyError
+      ? "**API key needed.** Go to Vercel → Settings → Environment Variables and add your ANTHROPIC_API_KEY. Then redeploy."
+      : `**Connection error:** ${e.message || "Please try again."}`;
+    addMessage("assistant", errMsg, "BUILDER");
+  }
+
+  setBusy(false);
+}
+
+// ── Input listeners ───────────────────────────────────────────────────────────
+document.getElementById("chat-input").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
+
+document.getElementById("chat-input").addEventListener("input", e => {
+  const btn = document.getElementById("send-btn");
+  btn.disabled = busy || !e.target.value.trim();
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+buildPhaseBar();
+buildQA();
+setRole("Dad");
+
+addMessage("assistant",
+  "👋 I'm **BUILDER** — your AI Project Manager for the Houston custom home build.\n\n" +
+  "You've broken ground and are acting as your own GC. I'm here to coach you through every phase, track contractor dependencies, flag inspections before they sneak up, and keep the whole build on track.\n\n" +
+  "**Pick your role above**, then tap a Quick Action or type what's happening on site.",
+  "BUILDER"
+);
+</script>
+</body>
+</html>
