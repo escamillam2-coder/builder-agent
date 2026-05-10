@@ -72,12 +72,7 @@
 </head>
 <body>
 
-<!-- Setup banner — shows until API key is configured -->
-<div id="setup-banner">
-  <button id="dismiss-btn" onclick="document.getElementById('setup-banner').remove()">✕</button>
-  <strong>⚙️ Setup needed:</strong> To activate BUILDER, add your Anthropic API key in Vercel → Settings → Environment Variables → <code>ANTHROPIC_API_KEY</code>. 
-  <a href="https://console.anthropic.com" target="_blank">Get your key here →</a>
-</div>
+<!-- Setup banner removed — API key configured via Vercel backend -->
 
 <!-- Header -->
 <div id="header">
@@ -367,19 +362,11 @@ async function sendMsg(text) {
   showTyping();
 
   try {
-    // In production this goes through your backend proxy
-    // For now it calls Anthropic directly (works when deployed on Vercel with API key)
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    // Route through Vercel backend — keeps API key secure, fixes CORS
+    const res = await fetch("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": window.ANTHROPIC_API_KEY || "",
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-calls": "true"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1024,
         system: SYSTEM_PROMPT,
         messages: history
       })
