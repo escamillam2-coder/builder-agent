@@ -18,7 +18,7 @@ module.exports = async function handler(req, res) {
     const { messages, system } = req.body;
 
     const payload = JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5',
       max_tokens: 1024,
       system,
       messages,
