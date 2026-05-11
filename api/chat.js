@@ -88,7 +88,10 @@ module.exports = async function handler(req, res) {
 
     // Read live sheet data and prepend to system prompt
     const projectContext = await getProjectContext();
-    const enhancedSystem = system + '\n\n' + projectContext;
+    // Add today's date so BUILDER always knows the current date
+    const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Chicago' });
+    const dateContext = `IMPORTANT: Today's date is ${today} (Houston, TX local time). Always use this as the current date in all your responses and calculations.\n\n`;
+    const enhancedSystem = system + '\n\n' + dateContext + projectContext;
 
     const payload = JSON.stringify({
       model: 'claude-sonnet-4-5',
