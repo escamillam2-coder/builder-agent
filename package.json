@@ -1,0 +1,8 @@
+{
+  "name": "builder-agent",
+  "version": "1.0.0",
+  "description": "BUILDER - Houston Home AI Project Manager",
+  "engines": {
+    "node": "18.x"
+  }
+}
