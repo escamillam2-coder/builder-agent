@@ -3,6 +3,84 @@ const https = require('https');
 // Your Google Sheet ID
 const SHEET_ID = '196K2RgOA-LnEziBkcR6hPKzZwJsmIKTDPLpV9hZWFuI';
 
+// Professional build knowledge baked in from expert checklists
+const REFERENCE_KNOWLEDGE = `
+=== PROFESSIONAL BUILD KNOWLEDGE BASE (BuildWithEmil + Industry Best Practices) ===
+
+CONTRACTOR HIRING RULES:
+- NEVER pay more than 10% upfront — red flag if demanded
+- Quality contractors booked 4-8 weeks out — if immediately available, ask why
+- Always verify TX licenses at tdlr.texas.gov before work starts
+- Get Certificate of Insurance naming owner as additional insured — call insurer to verify
+- Check Harris County court records for mechanic liens against contractors
+- Require itemized bids (labor + materials separate) — lump sum hides markups
+- All change orders in writing with pricing BEFORE work begins — no exceptions
+- Hold 10-15% retention until punch list complete and final inspection passed
+- Get lien waivers from ALL subcontractors before releasing final payment
+- Negotiate $100-500/day penalty clauses for missed completion dates
+
+FRAMING PHASE (Starting April 6 — next major milestone):
+- Verify foundation square with 3-4-5 triangle method before framers arrive
+- Demand moisture content testing on all lumber — must be under 19%
+- Pressure-treated lumber required for all sill plates touching concrete
+- Check stud spacing consistency — 16" or 24" centers for drywall alignment
+- Fire blocking required every 10 feet vertically — COH inspection item
+- Hurricane straps and seismic connectors required — Houston high-wind zone
+- Verify window/door rough opening sizes BEFORE ordering windows
+- Install backing/blocking now for TV mounts, grab bars, heavy cabinets
+- PHOTOGRAPH ALL framing before insulation or drywall covers it
+- Call for framing inspection BEFORE any MEP starts
+
+ROUGH MEP SEQUENCE (After framing inspection passes):
+- ORDER: Plumbing first, Electrical second, HVAC last
+- Plumbing needs most penetrations; electrical routes around pipes; HVAC fills remaining space
+- Run pressure test on supply lines before walls close
+- Add EV charger circuit to garage rough-in now ($200 now vs $1,500 after drywall)
+- HVAC: Require Manual J load calculation — square footage sizing creates problems
+- HVAC: Use mastic sealant on duct joints — NOT duct tape (fails within 5 years)
+- HVAC: Install turning vanes in all duct elbows
+- HVAC: Demand duct blaster testing before final inspection
+- Electrical: Verify AFCI circuits in all living areas (2020 NEC requirement)
+- Electrical: GFCI required in bathrooms, kitchen, garage, outdoor, within 6ft of water
+
+INSULATION (After ALL 3 MEP inspections pass):
+- R-38 minimum attic (R-49 recommended for Houston — reduces cooling 15%)
+- R-13 or R-15 exterior walls minimum
+- Install radiant barrier — Houston hot climate reduces cooling costs 10%
+- Seal rim joist with spray foam — major energy loss if skipped
+- Air seal ALL electrical boxes on exterior walls before drywall
+- REQUIRE thermal camera inspection after installation — reveals hidden gaps
+- Photograph every wall cavity before drywall
+
+HOUSTON-SPECIFIC RULES:
+- Post-tension cables stressed at 7 days after pour — VERIFY THIS HAPPENED MARCH 13
+- Houston black clay expands 30-40% when wet — post-tension slab is essential
+- High-wind zone — hurricane straps required and inspected by COH
+- FEMA flood zone — verify lot designation, may need elevation certificate
+- HVAC must control humidity AND temperature in Houston climate
+- Spray foam on roof deck creates conditioned attic — reduces HVAC load significantly
+
+LONG LEAD ITEMS — URGENT:
+- WINDOWS: 4-10 week lead — MUST ORDER THIS WEEK for April 6 framing start
+- KITCHEN CABINETS: 8-12 week lead — ORDER BY APRIL 1 AT LATEST
+- BATH VANITIES: 6-10 week lead — order with kitchen cabinets
+- ENGINEERED FLOORING: 3-6 week lead — order by June 1
+- PLUMBING FIXTURES: 4-8 week lead — order by May 1
+- GARAGE DOORS: 3-6 week lead — order by late April
+
+BLUE TAPE WALKTHROUGH — WHAT BUILDERS HOPE YOU MISS:
+- Test every GFCI outlet with reset button
+- Check all 3-way switches in every position — often wired wrong
+- Verify smoke detector interconnection — trigger one, all should activate
+- Test water pressure running 3 faucets + toilet flush simultaneously
+- Walk full property perimeter checking foundation drainage slopes away from house
+- Check all exterior caulking around windows, doors, penetrations
+- Test all doors — ones that don't close signal foundation movement
+- Verify all specified upgrades are actually installed (not substituted)
+- Video document everything before accepting — video beats photos in disputes
+- Get all warranty items in writing with completion dates — verbal = unenforceable
+`;
+
 // Weather API - using Open-Meteo (completely free, no key needed)
 function fetchHoustonWeather() {
   return new Promise((resolve) => {
@@ -159,6 +237,8 @@ module.exports = async function handler(req, res) {
 
     // Build enhanced system prompt
     const enhancedSystem = system + `
+
+` + REFERENCE_KNOWLEDGE + `
 
 IMPORTANT — TODAY'S DATE: ${today} (Houston, TX). Always use this as the current date in all responses, timeline calculations, and urgency assessments.
 
