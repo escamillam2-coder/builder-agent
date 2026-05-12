@@ -52,13 +52,30 @@ INSULATION (After ALL 3 MEP inspections pass):
 - REQUIRE thermal camera inspection after installation — reveals hidden gaps
 - Photograph every wall cavity before drywall
 
-HOUSTON-SPECIFIC RULES:
+HOUSTON COH REAL-WORLD INSPECTION SEQUENCE (from experienced Houston builder):
+The COH matrix is complex — here is the ACTUAL correct sequence for Houston:
+
+1. WINDSTORM INSPECTION — Hurricane clips and strapping must pass FIRST before any sheathing
+2. SHEATHING INSTALLATION — Plywood or gyp board wrap AFTER windstorm passes
+3. NAIL PATTERN INSPECTION — Separate inspection from windstorm, must pass before dry-in
+   NOTE: If in flood plain, elevation certificates required for nail pattern inspection
+4. DRY-IN — Siding and roof installation AFTER windstorm + nail pattern both pass
+5. MEP ROUGHS — Plumbing, AC, and electrical rough-ins
+6. MEP INSPECTIONS — All three (plumbing, electrical, mechanical) must pass individually
+7. FRAME INSPECTION (whole) — After all MEP pass. Windows and doors must be poly-sealed for this inspection
+8. INSULATION — After frame inspection passes
+9. INSULATION INSPECTION — Must pass before drywall
+10. DRYWALL — Can start after insulation inspection passes
+
+CRITICAL HOUSTON-SPECIFIC NOTES:
+- Windstorm and nail pattern are TWO SEPARATE inspections — do not confuse them
+- Windows and doors MUST be poly-sealed before frame inspection — contractors often miss this
+- Flood plain properties need elevation certificates for nail pattern inspection
 - Post-tension cables stressed at 7 days after pour — VERIFY THIS HAPPENED MARCH 13
 - Houston black clay expands 30-40% when wet — post-tension slab is essential
-- High-wind zone — hurricane straps required and inspected by COH
-- FEMA flood zone — verify lot designation, may need elevation certificate
-- HVAC must control humidity AND temperature in Houston climate
-- Spray foam on roof deck creates conditioned attic — reduces HVAC load significantly
+- High-wind zone — hurricane straps required and inspected
+- HVAC must control both temperature AND humidity in Houston climate
+- Spray foam on roof deck creates conditioned attic — significantly reduces HVAC load
 
 LONG LEAD ITEMS — URGENT:
 - WINDOWS: 4-10 week lead — MUST ORDER THIS WEEK for April 6 framing start
