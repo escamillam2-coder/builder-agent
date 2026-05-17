@@ -121,6 +121,49 @@ function writeToSheet(tabName, range, values, token) {
   });
 }
 
+// Find a row in a sheet by matching a value in a specific column
+function findRowByValue(rows, searchValue, columnIndex) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (row && row[columnIndex] && row[columnIndex].toString().trim() === searchValue.toString().trim()) {
+      return i + 1; // 1-indexed row number
+    }
+  }
+  return null;
+}
+
+// Smart write — finds the right row by Step ID or inspection name
+async function smartWrite(token, tab, searchCol, searchVal, writeCol, writeVal, logData) {
+  try {
+    // Fetch current tab data
+    const rows = await fetchSheetTab(tab, token);
+    
+    // Find the row
+    const rowNum = findRowByValue(rows, searchVal, searchCol);
+    if (!rowNum) {
+      console.error(`Could not find "${searchVal}" in column ${searchCol} of ${tab}`);
+      return false;
+    }
+
+    // Convert column number to letter
+    const colLetter = String.fromCharCode(64 + writeCol);
+    const range = `${colLetter}${rowNum}`;
+
+    // Write the value
+    await writeToSheet(tab, range, [[writeVal]], token);
+    
+    // Log it
+    if (logData) {
+      await appendAgentLog(token, logData.role, tab, logData.field, logData.old, logData.new, logData.summary);
+    }
+    
+    return true;
+  } catch (e) {
+    console.error('Smart write error:', e.message);
+    return false;
+  }
+}
+
 // Append a row to Agent Log
 function appendAgentLog(token, role, tab, field, oldVal, newVal, summary) {
   return new Promise((resolve) => {
@@ -231,14 +274,35 @@ WHEN UPDATING THE SHEET — add one <SHEET_UPDATE> block per change at the very 
 {"tab": "📋 Detailed Phase Plan", "range": "I8", "value": "✅ COMPLETE", "log": {"role": "Dad", "tab": "📋 Detailed Phase Plan", "field": "Step 2.6 Status", "old": "⚠️ VERIFY", "new": "✅ COMPLETE", "summary": "Dad confirmed post-tension stressing happened March 13"}}
 </SHEET_UPDATE>
 
-IMPORTANT RULES FOR SHEET UPDATES:
+CRITICAL RULES FOR SHEET UPDATES:
 - Only include SHEET_UPDATE when something actually changed — not for questions
-- Each update block must contain valid JSON — no trailing commas, no line breaks inside JSON
-- For the Detailed Phase Plan, status is in column I — use ranges like I8, I9, I10 etc.
-- For Inspections tab, result is in column F — use ranges like F5, F6 etc.
-- For Agent Log, always use appendAgentLog (handled automatically)
-- You can include multiple SHEET_UPDATE blocks if multiple things changed
-- After all updates, tell the user what you changed in plain language
+- Each block must be valid JSON — no trailing commas, no line breaks inside the JSON
+- NEVER guess cell addresses like D5 or I8 — use stepId instead so the system finds the right row
+- You can include multiple SHEET_UPDATE blocks for multiple changes
+
+FOR THE DETAILED PHASE PLAN — use stepId + column number:
+Column numbers: 4=Planned Start, 5=Planned End, 6=Actual Start, 7=Actual End, 8=Duration, 9=Status, 10=COH Inspection, 12=Notes
+Example — update step 2.6 actual end date:
+<SHEET_UPDATE>
+{"tab": "📋 Detailed Phase Plan", "stepId": "2.6", "column": 7, "value": "Mar 13, 2026", "log": {"role": "Dad", "tab": "📋 Detailed Phase Plan", "field": "Step 2.6 Actual End", "old": "[VERIFY]", "new": "Mar 13, 2026", "summary": "Post-tension stressing confirmed complete March 13"}}
+</SHEET_UPDATE>
+
+Example — update step 2.6 status:
+<SHEET_UPDATE>
+{"tab": "📋 Detailed Phase Plan", "stepId": "2.6", "column": 9, "value": "✅ COMPLETE", "log": {"role": "Dad", "tab": "📋 Detailed Phase Plan", "field": "Step 2.6 Status", "old": "⚠️ VERIFY", "new": "✅ COMPLETE", "summary": "Post-tension stressing verified complete"}}
+</SHEET_UPDATE>
+
+FOR INSPECTIONS TAB — use stepId matching the inspection name:
+Column numbers: 5=Scheduled Date, 6=Result, 7=Inspector, 8=Badge, 9=Correction Items
+Example:
+<SHEET_UPDATE>
+{"tab": "🔍 All Inspections", "stepId": "Foundation Pre-Pour", "column": 6, "value": "✅ PASSED", "log": {"role": "Dad", "tab": "🔍 All Inspections", "field": "Foundation Result", "old": "⏳ PENDING", "new": "✅ PASSED", "summary": "Foundation pre-pour inspection passed"}}
+</SHEET_UPDATE>
+
+FOR CONTRACTORS TAB — use stepId matching the trade name (e.g. "Plumber"):
+Column numbers: 2=Company, 3=Phone, 4=License, 5=Sched Start, 6=Actual Start, 7=Sched Complete, 8=Actual Complete, 9=Contract$, 10=Paid, 12=Notes
+
+After all updates, tell Dad what you changed in plain language.
 
 WHEN A DELAY IS REPORTED: Show ripple impact, suggest recovery options, identify who's affected, offer to draft a message, note budget impact, and update the sheet.
 
@@ -356,23 +420,42 @@ Sheet write is ${token ? 'ENABLED — you can update the sheet' : 'read-only mod
         try {
           const update = JSON.parse(match[1].trim());
 
-          // Write to the sheet
-          await writeToSheet(update.tab, update.range, [[update.value]], token);
+          let success = false;
 
-          // Log the change
-          if (update.log) {
-            await appendAgentLog(
+          // If update has a stepId, use smart write to find the correct row
+          if (update.stepId && update.column) {
+            // stepId = the Step ID to search for (e.g. "2.6")
+            // column = column number to write to (e.g. 7 = column G = Actual End)
+            // Column map: 1=StepID, 2=Name, 3=Cat, 4=PlannedStart, 5=PlannedEnd, 6=ActualStart, 7=ActualEnd, 8=Duration, 9=Status, 10=COH, 11=Deps, 12=Notes
+            success = await smartWrite(
               token,
-              update.log.role || 'BUILDER',
-              update.log.tab,
-              update.log.field,
-              update.log.old,
-              update.log.new,
-              update.log.summary
+              update.tab,
+              0, // Column A = Step ID (0-indexed)
+              update.stepId,
+              update.column,
+              update.value,
+              update.log
             );
+          } else if (update.range) {
+            // Fallback to direct range write
+            await writeToSheet(update.tab, update.range, [[update.value]], token);
+            if (update.log) {
+              await appendAgentLog(
+                token,
+                update.log.role || 'BUILDER',
+                update.log.tab,
+                update.log.field,
+                update.log.old,
+                update.log.new,
+                update.log.summary
+              );
+            }
+            success = true;
           }
 
-          updatesExecuted.push(update.log ? update.log.summary : update.tab);
+          if (success !== false) {
+            updatesExecuted.push(update.log ? update.log.summary : update.tab);
+          }
         } catch (e) {
           console.error('Sheet write error:', e.message);
         }
