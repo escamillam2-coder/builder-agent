@@ -1,323 +1,302 @@
 const https = require('https');
+const crypto = require('crypto');
 
-// Your Google Sheet ID
 const SHEET_ID = '196K2RgOA-LnEziBkcR6hPKzZwJsmIKTDPLpV9hZWFuI';
 
 // ── Google Auth ───────────────────────────────────────────────────────────────
 function getServiceAccount() {
   try {
     const raw = process.env.GOOGLE_SERVICE_ACCOUNT;
-    if (!raw) throw new Error('No service account found');
+    if (!raw) throw new Error('No service account');
     return JSON.parse(raw);
-  } catch (e) {
-    console.error('Service account parse error:', e.message);
-    return null;
-  }
+  } catch (e) { console.error('SA error:', e.message); return null; }
 }
 
 function base64url(str) {
-  return Buffer.from(str)
-    .toString('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
+  return Buffer.from(str).toString('base64')
+    .replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
 }
 
 async function getGoogleToken(sa) {
   const now = Math.floor(Date.now() / 1000);
-  const header = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const header  = base64url(JSON.stringify({ alg:'RS256', typ:'JWT' }));
   const payload = base64url(JSON.stringify({
     iss: sa.client_email,
     scope: 'https://www.googleapis.com/auth/spreadsheets',
     aud: 'https://oauth2.googleapis.com/token',
-    exp: now + 3600,
-    iat: now,
+    exp: now + 3600, iat: now,
   }));
-
-  const signingInput = `${header}.${payload}`;
-  const crypto = require('crypto');
+  const sigInput = `${header}.${payload}`;
   const sign = crypto.createSign('RSA-SHA256');
-  sign.update(signingInput);
-  const signature = sign.sign(sa.private_key, 'base64')
-    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-
-  const jwt = `${signingInput}.${signature}`;
+  sign.update(sigInput);
+  const sig = sign.sign(sa.private_key,'base64')
+    .replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
+  const jwt = `${sigInput}.${sig}`;
 
   return new Promise((resolve, reject) => {
     const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
-    const options = {
-      hostname: 'oauth2.googleapis.com',
-      path: '/token',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': Buffer.byteLength(body),
-      },
+    const opts = {
+      hostname:'oauth2.googleapis.com', path:'/token', method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded','Content-Length':Buffer.byteLength(body)}
     };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.access_token) resolve(parsed.access_token);
-          else reject(new Error('No access token: ' + data));
-        } catch (e) { reject(e); }
-      });
+    const req = https.request(opts, (res) => {
+      let d=''; res.on('data',c=>d+=c);
+      res.on('end',()=>{ try{ const p=JSON.parse(d); p.access_token?resolve(p.access_token):reject(new Error(d)); }catch(e){reject(e);} });
     });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
+    req.on('error',reject); req.write(body); req.end();
   });
 }
 
 // ── Sheet Read ────────────────────────────────────────────────────────────────
-function fetchSheetTab(tabName, token) {
+function readTab(tab, token) {
   return new Promise((resolve) => {
-    const path = `/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(tabName)}`;
-    const options = {
-      hostname: 'sheets.googleapis.com',
-      path,
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-    };
-    const req = https.request(options, (res) => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(body).values || []); }
-        catch { resolve([]); }
-      });
-    });
-    req.on('error', () => resolve([]));
-    req.end();
+    const path = `/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(tab)}`;
+    const req = https.request(
+      { hostname:'sheets.googleapis.com', path, method:'GET', headers:{Authorization:`Bearer ${token}`} },
+      (res) => { let d=''; res.on('data',c=>d+=c); res.on('end',()=>{ try{resolve(JSON.parse(d).values||[]);}catch{resolve([]);} }); }
+    );
+    req.on('error',()=>resolve([])); req.end();
   });
 }
 
 // ── Sheet Write ───────────────────────────────────────────────────────────────
-function writeToSheet(tabName, range, values, token) {
+function writeCell(tab, range, value, token) {
   return new Promise((resolve, reject) => {
-    const fullRange = `${tabName}!${range}`;
-    const body = JSON.stringify({ range: fullRange, majorDimension: 'ROWS', values });
+    const fullRange = `${tab}!${range}`;
+    const body = JSON.stringify({ range: fullRange, majorDimension:'ROWS', values:[[value]] });
     const path = `/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(fullRange)}?valueInputOption=USER_ENTERED`;
-    const options = {
-      hostname: 'sheets.googleapis.com',
-      path,
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
+    const opts = {
+      hostname:'sheets.googleapis.com', path, method:'PUT',
+      headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)}
     };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(JSON.parse(data)));
-    });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
+    const req = https.request(opts,(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>resolve(d));});
+    req.on('error',reject); req.write(body); req.end();
   });
 }
 
-// Find a row in a sheet by matching a value in a specific column
-function findRowByValue(rows, searchValue, columnIndex) {
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    if (row && row[columnIndex] && row[columnIndex].toString().trim() === searchValue.toString().trim()) {
-      return i + 1; // 1-indexed row number
-    }
-  }
-  return null;
-}
-
-// Smart write — finds the right row by Step ID or inspection name
-async function smartWrite(token, tab, searchCol, searchVal, writeCol, writeVal, logData) {
-  try {
-    // Fetch current tab data
-    const rows = await fetchSheetTab(tab, token);
-    
-    // Find the row
-    const rowNum = findRowByValue(rows, searchVal, searchCol);
-    if (!rowNum) {
-      console.error(`Could not find "${searchVal}" in column ${searchCol} of ${tab}`);
-      return false;
-    }
-
-    // Convert column number to letter
-    const colLetter = String.fromCharCode(64 + writeCol);
-    const range = `${colLetter}${rowNum}`;
-
-    // Write the value
-    await writeToSheet(tab, range, [[writeVal]], token);
-    
-    // Log it
-    if (logData) {
-      await appendAgentLog(token, logData.role, tab, logData.field, logData.old, logData.new, logData.summary);
-    }
-    
-    return true;
-  } catch (e) {
-    console.error('Smart write error:', e.message);
-    return false;
-  }
-}
-
-// Append a row to Agent Log
-function appendAgentLog(token, role, tab, field, oldVal, newVal, summary) {
+function appendRows(tab, rows, token) {
   return new Promise((resolve) => {
-    const timestamp = new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' });
-    const row = [[timestamp, role, tab, field, oldVal, newVal, summary]];
-    const body = JSON.stringify({ majorDimension: 'ROWS', values: row });
-    const range = encodeURIComponent('🤖 Agent Log!A:G');
+    const body = JSON.stringify({ majorDimension:'ROWS', values: rows });
+    const range = encodeURIComponent(`${tab}!A:F`);
     const path = `/v4/spreadsheets/${SHEET_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
-    const options = {
-      hostname: 'sheets.googleapis.com',
-      path,
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
+    const opts = {
+      hostname:'sheets.googleapis.com', path, method:'POST',
+      headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)}
     };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(data));
-    });
-    req.on('error', () => resolve(null));
-    req.write(body);
-    req.end();
+    const req = https.request(opts,(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>resolve(d));});
+    req.on('error',()=>resolve(null)); req.write(body); req.end();
   });
+}
+
+// ── Smart row finder ──────────────────────────────────────────────────────────
+async function smartWrite(token, tab, searchVal, writeCol, writeVal, log) {
+  try {
+    const rows = await readTab(tab, token);
+    let rowNum = null;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i] && rows[i][0] && rows[i][0].toString().trim() === searchVal.toString().trim()) {
+        rowNum = i + 1; break;
+      }
+    }
+    if (!rowNum) { console.error(`Row not found: ${searchVal}`); return false; }
+    const colLetter = String.fromCharCode(64 + writeCol);
+    await writeCell(tab, `${colLetter}${rowNum}`, writeVal, token);
+    if (log) await appendAgentLog(token, log.role, tab, log.field, log.old, log.new, log.summary);
+    return true;
+  } catch(e) { console.error('smartWrite error:', e.message); return false; }
+}
+
+// ── Agent Log ─────────────────────────────────────────────────────────────────
+function appendAgentLog(token, role, tab, field, oldVal, newVal, summary) {
+  const ts = new Date().toLocaleString('en-US',{timeZone:'America/Chicago'});
+  return appendRows('🤖 Agent Log', [[ts, role||'BUILDER', tab, field, oldVal, newVal, summary]], token)
+    .catch(e => console.error('AgentLog error:', e.message));
+}
+
+// ── Conversation Log ──────────────────────────────────────────────────────────
+function logConversation(token, role, device, type, message, sessionId) {
+  const ts = new Date().toLocaleString('en-US',{timeZone:'America/Chicago'});
+  const truncated = message.length > 500 ? message.substring(0, 497) + '...' : message;
+  return appendRows('💬 Conversation Log', [[ts, role, device, type, truncated, sessionId]], token)
+    .catch(e => console.error('ConvLog error:', e.message));
+}
+
+// ── Parse config from sheet ───────────────────────────────────────────────────
+function parseConfig(rows) {
+  const config = {};
+  for (const row of rows) {
+    if (row && row[0] && row[1]) {
+      config[row[0].trim()] = row[1].trim();
+    }
+  }
+  return config;
+}
+
+// ── Format sheet data ─────────────────────────────────────────────────────────
+function fmt(rows, name, maxRows = 999) {
+  if (!rows || rows.length === 0) return `${name}: No data yet.\n`;
+  return `--- ${name} ---\n${rows.slice(0,maxRows).map(r=>r.join(' | ')).join('\n')}\n\n`;
 }
 
 // ── Weather ───────────────────────────────────────────────────────────────────
-function fetchHoustonWeather() {
+function fetchWeather() {
   return new Promise((resolve) => {
     const path = '/v1/forecast?latitude=29.7604&longitude=-95.3698&daily=temperature_2m_max,precipitation_probability_max,windspeed_10m_max,weathercode&timezone=America%2FChicago&forecast_days=7&temperature_unit=fahrenheit&windspeed_unit=mph';
-    const req = https.request({ hostname: 'api.open-meteo.com', path, method: 'GET' }, (res) => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
+    const req = https.request({hostname:'api.open-meteo.com', path, method:'GET'}, (res) => {
+      let d=''; res.on('data',c=>d+=c);
+      res.on('end',()=>{
         try {
-          const data = JSON.parse(body);
-          const daily = data.daily;
-          const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-          let forecast = '--- LIVE HOUSTON WEATHER (Next 7 Days) ---\n';
-          for (let i = 0; i < daily.time.length; i++) {
-            const date = new Date(daily.time[i] + 'T12:00:00');
-            const dayName = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : days[date.getDay()];
-            const rain = daily.precipitation_probability_max[i];
-            const wind = daily.windspeed_10m_max[i];
-            const high = Math.round(daily.temperature_2m_max[i]);
-            const code = daily.weathercode[i];
-            let condition = code >= 95 ? 'Thunderstorms' : code >= 80 ? 'Rain showers' : code >= 61 ? 'Rainy' : code >= 45 ? 'Foggy' : code >= 3 ? 'Cloudy' : 'Clear';
-            let risk = rain >= 70 || code >= 80 ? 'HIGH RISK ❌ avoid outdoor work' : rain >= 40 || wind >= 25 ? 'MODERATE RISK ⚠️ plan carefully' : wind >= 35 ? 'HIGH WIND ❌ no roof/truss work' : 'LOW RISK ✅';
-            forecast += `${dayName}: ${high}°F, ${condition}, ${rain}% rain, ${wind}mph wind — ${risk}\n`;
+          const data = JSON.parse(d).daily;
+          const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          let out = '--- LIVE HOUSTON WEATHER ---\n';
+          for (let i = 0; i < data.time.length; i++) {
+            const date = new Date(data.time[i]+'T12:00:00');
+            const day = i===0?'Today':i===1?'Tomorrow':days[date.getDay()];
+            const rain = data.precipitation_probability_max[i];
+            const wind = data.windspeed_10m_max[i];
+            const high = Math.round(data.temperature_2m_max[i]);
+            const code = data.weathercode[i];
+            const cond = code>=95?'Thunderstorms':code>=80?'Rain showers':code>=61?'Rainy':code>=3?'Cloudy':'Clear';
+            const risk = (rain>=70||code>=80)?'HIGH RISK ❌':(rain>=40||wind>=25)?'MODERATE ⚠️':wind>=35?'HIGH WIND ❌':'LOW RISK ✅';
+            out += `${day}: ${high}°F ${cond} ${rain}% rain ${wind}mph — ${risk}\n`;
           }
-          resolve(forecast);
-        } catch { resolve('Weather temporarily unavailable.\n'); }
+          resolve(out);
+        } catch { resolve('Weather unavailable.\n'); }
       });
     });
-    req.on('error', () => resolve('Weather temporarily unavailable.\n'));
-    req.end();
+    req.on('error',()=>resolve('Weather unavailable.\n')); req.end();
   });
 }
 
-// ── Format Sheet Data ─────────────────────────────────────────────────────────
-function formatTab(rows, name) {
-  if (!rows || rows.length === 0) return `${name}: No data yet.\n`;
-  return `--- ${name} ---\n${rows.map(r => r.join(' | ')).join('\n')}\n\n`;
-}
+// ── Build system prompt from config + sheet data ──────────────────────────────
+function buildSystemPrompt(config, phases, contractors, inspections, budget, longLead, knowledge, convLog, weather, today, sessionId) {
 
-// ── Build System Prompt ───────────────────────────────────────────────────────
-const BASE_SYSTEM = `You are BUILDER — an expert AI Project Manager for a family building a custom home in Houston, Texas. You are their GC advisor, schedule manager, dependency tracker, and subcontractor accountability coach.
+  // Parse recent conversation for context
+  const recentConv = convLog.slice(-40)
+    .filter(r => r && r[4] && r[3] !== 'SESSION_START')
+    .map(r => `[${r[1]||'?'} — ${r[0]||''}]: ${r[4]||''}`)
+    .join('\n');
 
-PROJECT: Single family custom home, 2 stories, 2,500–3,500 sqft, City of Houston TX. Family acting as own GC. Concrete poured March 6, 2026.
+  // Parse handoff notes
+  const handoff = config['handoff_notes'] || 'No prior session summary available.';
+  const lastSession = config['last_session_date'] || 'Unknown';
+
+  // Build role definitions from config
+  const dadName = config['dad_name'] || 'Dad';
+  const momName = config['mom_name'] || 'Mom';
+  const commandName = config['command_name'] || 'Command';
+
+  // Build custom rules
+  const customRules = [1,2,3,4,5]
+    .map(i => config[`custom_rule_${i}`])
+    .filter(r => r && !r.includes('[Add your'))
+    .join('\n- ');
+
+  return `You are BUILDER — an AI Project Manager for a family building a custom home in Houston, Texas.
+
+SESSION ID: ${sessionId}
+TODAY: ${today} (Houston TX time)
+LAST SESSION: ${lastSession}
+LAST SESSION SUMMARY: ${handoff}
+
+PROJECT: ${config['project_name'] || 'Houston Custom Home'}
+Address: ${config['project_address'] || '[Not set]'}
+Jurisdiction: ${config['jurisdiction'] || 'City of Houston (COH)'}
+Flood Zone: ${config['flood_zone'] || '[Not verified — check hcfcd.org]'}
+Size: ${config['square_footage'] || '2,500-3,500 sqft'}, ${config['stories'] || '2'} stories
+Concrete poured: ${config['concrete_pour_date'] || 'March 6, 2026'}
+Framing earliest: ${config['framing_earliest'] || 'April 6, 2026'}
+Budget: ${config['total_budget'] || '[Not set]'}
 
 FAMILY ROLES:
-- DAD: On-site daily. Short sentences. Action items only. No theory.
-- MOM: Manages budget and decisions. Lead with dollar impact. No jargon.
-- COMMAND (Michael): Full oversight. Complete strategic picture.
-- GENERAL: Learning mode. Warm, clear, encouraging.
+- ${dadName} (Dad): ${config['dad_tone'] || 'Short sentences. Action items. No theory.'}
+- ${momName} (Mom): ${config['mom_tone'] || 'Lead with dollar impact. No jargon.'}
+- ${commandName} (Command): ${config['command_tone'] || 'Full strategic picture.'}
+- General: ${config['general_tone'] || 'Warm, clear, encouraging. Coach and teach.'}
 
-HOUSTON COH REAL INSPECTION SEQUENCE:
+KEY CONTACTS:
+${Object.entries(config).filter(([k])=>k.startsWith('contact_')).map(([k,v])=>`- ${k.replace('contact_','')}: ${v}`).join('\n')}
+
+${customRules ? `CUSTOM RULES (always follow these):\n- ${customRules}` : ''}
+
+HOUSTON COH INSPECTION SEQUENCE (real-world confirmed):
 1. Windstorm inspection (clips + strapping) — BEFORE any sheathing
 2. Sheathing installation
-3. Nail Pattern inspection — SEPARATE from windstorm. Flood plain = elevation cert required here
+3. Nail Pattern inspection — SEPARATE from windstorm
+   → Flood plain properties: elevation cert required at nail pattern
 4. Dry-in (siding + roof)
-5. MEP Roughs — Plumbing first, Electrical second, HVAC last
+5. MEP Roughs: Plumbing FIRST, Electrical SECOND, HVAC LAST
 6. All 3 MEP inspections pass individually
-7. Full Frame inspection — windows and doors MUST be poly-sealed for this
+7. Full Frame inspection — windows and doors MUST be poly-sealed
 8. Insulation inspection
-9. Drywall starts
+9. Drywall begins
 
-CRITICAL RULES:
-- No framing before 28-day cure (earliest April 3, 2026)
-- No MEP before framing inspection
-- No sheathing before windstorm inspection
-- No drywall before insulation inspection
-- No CO before all finals pass
-- COH: 832-394-8800 | houstonpermittingcenter.org | 24-48hr notice
+COH: ${config['coh_phone']||'832-394-8800'} | ${config['coh_website']||'houstonpermittingcenter.org'} | ${config['inspection_notice_hours']||'24-48'}hr notice
+Retention: Hold ${config['retention_percentage']||'10%'} on all contractor payments
+No verbal change orders. Verify TX licenses at tdlr.texas.gov.
 
-CONTRACTOR RULES: Hold 10% retention. No verbal change orders. Verify TX licenses at tdlr.texas.gov.
+BEHAVIOR:
+- Check weather: ${config['always_check_weather']||'YES'}
+- Auto log changes: ${config['auto_log_changes']||'YES'}
+- Show ripple on delay: ${config['show_ripple_on_delay']||'YES'}
+- Draft messages on delay: ${config['draft_messages_on_delay']||'YES'}
+- Ask before saving lesson: ${config['ask_before_saving_lesson']||'YES'}
+- Response length: ${config['max_response_length']||'MEDIUM'}
 
-LONG LEAD URGENCY: Windows (4-10 wk), Cabinets (8-12 wk), Flooring (3-6 wk), Fixtures (4-8 wk).
+SHEET WRITE INSTRUCTIONS:
+When something changes, add SHEET_UPDATE blocks at END of response.
+Use stepId to find rows — never guess cell addresses.
 
-SHEET WRITE CAPABILITY: You can update the Google Sheet directly. When someone reports something happened, update the relevant tab and log it.
-
-WHEN UPDATING THE SHEET — add one <SHEET_UPDATE> block per change at the very END of your message. Each block must be valid JSON on a single line:
-
+For Detailed Phase Plan (columns: 4=PlanStart 5=PlanEnd 6=ActStart 7=ActEnd 8=Duration 9=Status 10=COH 12=Notes):
 <SHEET_UPDATE>
-{"tab": "📋 Detailed Phase Plan", "range": "I8", "value": "✅ COMPLETE", "log": {"role": "Dad", "tab": "📋 Detailed Phase Plan", "field": "Step 2.6 Status", "old": "⚠️ VERIFY", "new": "✅ COMPLETE", "summary": "Dad confirmed post-tension stressing happened March 13"}}
+{"tab": "📋 Detailed Phase Plan", "stepId": "2.6", "column": 9, "value": "✅ COMPLETE", "log": {"role": "Dad", "tab": "📋 Detailed Phase Plan", "field": "Step 2.6 Status", "old": "⚠️ VERIFY", "new": "✅ COMPLETE", "summary": "Post-tension stressing confirmed"}}
 </SHEET_UPDATE>
 
-CRITICAL RULES FOR SHEET UPDATES:
-- Only include SHEET_UPDATE when something actually changed — not for questions
-- Each block must be valid JSON — no trailing commas, no line breaks inside the JSON
-- NEVER guess cell addresses like D5 or I8 — use stepId instead so the system finds the right row
-- You can include multiple SHEET_UPDATE blocks for multiple changes
-
-FOR THE DETAILED PHASE PLAN — use stepId + column number:
-Column numbers: 4=Planned Start, 5=Planned End, 6=Actual Start, 7=Actual End, 8=Duration, 9=Status, 10=COH Inspection, 12=Notes
-Example — update step 2.6 actual end date:
+For Inspections (columns: 5=SchedDate 6=Result 7=Inspector 8=Badge 9=Corrections):
 <SHEET_UPDATE>
-{"tab": "📋 Detailed Phase Plan", "stepId": "2.6", "column": 7, "value": "Mar 13, 2026", "log": {"role": "Dad", "tab": "📋 Detailed Phase Plan", "field": "Step 2.6 Actual End", "old": "[VERIFY]", "new": "Mar 13, 2026", "summary": "Post-tension stressing confirmed complete March 13"}}
+{"tab": "🔍 All Inspections", "stepId": "Foundation Pre-Pour", "column": 6, "value": "✅ PASSED", "log": {"role": "Dad", "tab": "🔍 All Inspections", "field": "Result", "old": "⏳ PENDING", "new": "✅ PASSED", "summary": "Inspection passed"}}
 </SHEET_UPDATE>
 
-Example — update step 2.6 status:
+For Knowledge Base (new lesson):
 <SHEET_UPDATE>
-{"tab": "📋 Detailed Phase Plan", "stepId": "2.6", "column": 9, "value": "✅ COMPLETE", "log": {"role": "Dad", "tab": "📋 Detailed Phase Plan", "field": "Step 2.6 Status", "old": "⚠️ VERIFY", "new": "✅ COMPLETE", "summary": "Post-tension stressing verified complete"}}
+{"tab": "📚 Knowledge Base", "appendRow": true, "values": ["[auto]", "Category", "Lesson in one sentence", "Why it matters", "Dad — Home 1", "May 2026", "1", "⬜ Pending"], "log": {"role": "Dad", "tab": "📚 Knowledge Base", "field": "New Lesson", "old": "—", "new": "lesson", "summary": "Lesson added"}}
 </SHEET_UPDATE>
 
-FOR INSPECTIONS TAB — use stepId matching the inspection name:
-Column numbers: 5=Scheduled Date, 6=Result, 7=Inspector, 8=Badge, 9=Correction Items
-Example:
+For Agent Config (update handoff notes at END of every session):
 <SHEET_UPDATE>
-{"tab": "🔍 All Inspections", "stepId": "Foundation Pre-Pour", "column": 6, "value": "✅ PASSED", "log": {"role": "Dad", "tab": "🔍 All Inspections", "field": "Foundation Result", "old": "⏳ PENDING", "new": "✅ PASSED", "summary": "Foundation pre-pour inspection passed"}}
+{"tab": "⚙️ Agent Config", "stepId": "handoff_notes", "column": 2, "value": "2-3 sentence summary of this conversation", "log": {"role": "BUILDER", "tab": "⚙️ Agent Config", "field": "handoff_notes", "old": "prior", "new": "new summary", "summary": "Session summary updated"}}
 </SHEET_UPDATE>
 
-FOR CONTRACTORS TAB — use stepId matching the trade name (e.g. "Plumber"):
-Column numbers: 2=Company, 3=Phone, 4=License, 5=Sched Start, 6=Actual Start, 7=Sched Complete, 8=Actual Complete, 9=Contract$, 10=Paid, 12=Notes
+IMPORTANT: At the END of every response that contains meaningful information, update handoff_notes with a 2-3 sentence summary of what was discussed. This is how you remember between sessions.
 
-After all updates, tell Dad what you changed in plain language.
+WHEN TO ADD KNOWLEDGE BASE LESSONS:
+When Dad shares a mistake, a tip, or a lesson — ask "Should I save this as a lesson for future builds?" If yes, append to Knowledge Base.
 
-WHEN A DELAY IS REPORTED: Show ripple impact, suggest recovery options, identify who's affected, offer to draft a message, note budget impact, and update the sheet.
+WHEN A DELAY IS REPORTED:
+1. Acknowledge clearly
+2. Show ripple impact with specific dates
+3. Suggest 2-3 recovery options
+4. Identify who is affected
+5. Offer to draft stakeholder message
+6. Note budget impact
+7. Update sheet
 
-You have full construction knowledge. Answer ANY building question Dad asks — materials, methods, codes, costs, everything. You are their expert on site.`;
+You have FULL construction knowledge. Answer ANY building question — materials, methods, codes, costs, tools, everything. You are the family's expert on everything construction related.
 
-const REFERENCE_KNOWLEDGE = `
-CONTRACTOR HIRING: Never pay >10% upfront. Verify TX licenses. Get COI naming owner as additional insured. Itemized bids only. Hold 10-15% retention. Lien waivers before final payment.
+RECENT CONVERSATION HISTORY (last 40 exchanges):
+${recentConv || 'No prior conversation history. This appears to be the first session.'}
 
-FRAMING: Verify foundation square first. Lumber <19% moisture (KD stamp). PT lumber on sill plates. Fire blocking every 10ft vertically. Hurricane straps required. Photograph everything before MEP.
+LIVE PROJECT DATA:
+${fmt(phases.slice(0,80), '📋 Detailed Phase Plan')}
+${fmt(contractors, '👷 Contractors')}
+${fmt(inspections, '🔍 All Inspections')}
+${fmt(budget, '💰 Budget')}
+${fmt(longLead, '📦 Long Lead Orders')}
+${fmt(knowledge.slice(0,36), '📚 Knowledge Base')}
 
-MEP ORDER: Plumbing first (most penetrations), Electrical second (routes around pipes), HVAC last (fills remaining space).
-
-INSULATION: R-38 attic min (R-49 recommended Houston). R-13/15 walls. Radiant barrier in attic. Air seal all penetrations before drywall. Thermal camera inspection after install.
-
-BLUE TAPE WALKTHROUGH: Test every GFCI. Check all 3-way switches. Verify smoke detector interconnection. Test water pressure with 3 faucets + toilet simultaneously. Check all doors square. Video everything before accepting.`;
+LIVE WEATHER:
+${weather}`;
+}
 
 // ── Main Handler ──────────────────────────────────────────────────────────────
 module.exports = async function handler(req, res) {
@@ -328,90 +307,106 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { messages, system } = req.body;
+    const { messages, system, role: userRole, device: userDevice } = req.body;
+
+    // Generate session ID (shared across a browser session)
+    const sessionId = `S${Date.now().toString(36).toUpperCase()}`;
 
     // Get Google token
     const sa = getServiceAccount();
     let token = null;
     if (sa) {
       try { token = await getGoogleToken(sa); }
-      catch (e) { console.error('Token error:', e.message); }
+      catch(e) { console.error('Token error:', e.message); }
     }
 
-    // Read sheet data + weather in parallel
-    const [phases, contractors, inspections, budget, longLead, weather] = await Promise.all([
-      token ? fetchSheetTab('📋 Detailed Phase Plan', token) : Promise.resolve([]),
-      token ? fetchSheetTab('👷 Contractors', token) : Promise.resolve([]),
-      token ? fetchSheetTab('🔍 All Inspections', token) : Promise.resolve([]),
-      token ? fetchSheetTab('💰 Budget', token) : Promise.resolve([]),
-      token ? fetchSheetTab('📦 Long Lead Orders', token) : Promise.resolve([]),
-      fetchHoustonWeather(),
+    // Read all sheet data in parallel
+    const [
+      config_raw, phases, contractors, inspections,
+      budget, longLead, knowledge, convLog, weather
+    ] = await Promise.all([
+      token ? readTab('⚙️ Agent Config', token) : Promise.resolve([]),
+      token ? readTab('📋 Detailed Phase Plan', token) : Promise.resolve([]),
+      token ? readTab('👷 Contractors', token) : Promise.resolve([]),
+      token ? readTab('🔍 All Inspections', token) : Promise.resolve([]),
+      token ? readTab('💰 Budget', token) : Promise.resolve([]),
+      token ? readTab('📦 Long Lead Orders', token) : Promise.resolve([]),
+      token ? readTab('📚 Knowledge Base', token) : Promise.resolve([]),
+      token ? readTab('💬 Conversation Log', token) : Promise.resolve([]),
+      fetchWeather(),
     ]);
 
-    // Today's date
-    const today = new Date().toLocaleDateString('en-US', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-      timeZone: 'America/Chicago'
+    const config = parseConfig(config_raw);
+    const today = new Date().toLocaleDateString('en-US',{
+      weekday:'long', year:'numeric', month:'long', day:'numeric',
+      timeZone:'America/Chicago'
     });
 
-    // Build enhanced system prompt
-    const enhancedSystem = BASE_SYSTEM + '\n\n' + REFERENCE_KNOWLEDGE + `
+    // Build system prompt from config + live data
+    const systemPrompt = buildSystemPrompt(
+      config, phases, contractors, inspections,
+      budget, longLead, knowledge, convLog, weather, today, sessionId
+    );
 
-TODAY'S DATE: ${today} (Houston TX). Always use this for all calculations and urgency.
+    // Log user message
+    const lastUserMsg = messages[messages.length - 1];
+    const isFirstMsg = messages.length === 1;
 
-LIVE PROJECT DATA:
-${formatTab(phases.slice(0, 80), '📋 Detailed Phase Plan')}
-${formatTab(contractors, '👷 Contractors')}
-${formatTab(inspections, '🔍 All Inspections')}
-${formatTab(budget, '💰 Budget')}
-${formatTab(longLead, '📦 Long Lead Orders')}
+    if (token && lastUserMsg?.role === 'user') {
+      // Log session start on first message
+      if (isFirstMsg) {
+        const priorCount = convLog.filter(r => r && r[3] === 'MESSAGE').length;
+        const handoff = config['handoff_notes'] || 'No prior history';
+        await logConversation(token, 'SYSTEM', '—', 'SESSION_START',
+          `New session ${sessionId}. Read ${priorCount} prior messages. Last summary: ${handoff.substring(0,150)}`,
+          sessionId);
 
-LIVE WEATHER:
-${weather}
+        // Update last session date
+        await smartWrite(token, '⚙️ Agent Config', 'last_session_date', 2, today, null);
+      }
 
-Sheet write is ${token ? 'ENABLED — you can update the sheet' : 'read-only mode — token unavailable'}.`;
+      // Log user message
+      await logConversation(token,
+        userRole || 'User',
+        userDevice || 'Browser',
+        'MESSAGE',
+        lastUserMsg.content,
+        sessionId
+      );
+    }
 
     // Call Claude
     const payload = JSON.stringify({
       model: 'claude-sonnet-4-5',
       max_tokens: 1500,
-      system: enhancedSystem,
+      system: systemPrompt,
       messages,
     });
 
-    const claudeResponse = await new Promise((resolve, reject) => {
-      const options = {
-        hostname: 'api.anthropic.com',
-        path: '/v1/messages',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+    const claudeData = await new Promise((resolve, reject) => {
+      const opts = {
+        hostname:'api.anthropic.com', path:'/v1/messages', method:'POST',
+        headers:{
+          'Content-Type':'application/json',
           'x-api-key': process.env.ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'Content-Length': Buffer.byteLength(payload),
-        },
+          'anthropic-version':'2023-06-01',
+          'Content-Length': Buffer.byteLength(payload)
+        }
       };
-      const request = https.request(options, (r) => {
-        let body = '';
-        r.on('data', chunk => body += chunk);
-        r.on('end', () => {
-          try { resolve({ status: r.statusCode, body: JSON.parse(body) }); }
-          catch (e) { reject(e); }
-        });
+      const req2 = https.request(opts, (r) => {
+        let d=''; r.on('data',c=>d+=c);
+        r.on('end',()=>{ try{resolve({status:r.statusCode,body:JSON.parse(d)});}catch(e){reject(e);} });
       });
-      request.on('error', reject);
-      request.write(payload);
-      request.end();
+      req2.on('error',reject); req2.write(payload); req2.end();
     });
 
-    if (!claudeResponse.body.content) {
-      return res.status(claudeResponse.status).json(claudeResponse.body);
+    if (!claudeData.body.content) {
+      return res.status(claudeData.status).json(claudeData.body);
     }
 
-    // Extract reply text
-    let reply = claudeResponse.body.content.map(c => c.text || '').join('');
+    let reply = claudeData.body.content.map(c=>c.text||'').join('');
 
-    // Parse and execute ALL sheet updates (handles multiple per response)
+    // Process all SHEET_UPDATE blocks
     const updateMatches = [...reply.matchAll(/<SHEET_UPDATE>([\s\S]*?)<\/SHEET_UPDATE>/g)];
     const updatesExecuted = [];
 
@@ -420,68 +415,63 @@ Sheet write is ${token ? 'ENABLED — you can update the sheet' : 'read-only mod
         try {
           const update = JSON.parse(match[1].trim());
 
-          let success = false;
+          if (update.appendRow && update.values) {
+            // Append new row (Knowledge Base lessons etc)
+            const range = encodeURIComponent(`${update.tab}!A:H`);
+            const path = `/v4/spreadsheets/${SHEET_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+            const body = JSON.stringify({ majorDimension:'ROWS', values:[update.values] });
+            await new Promise((resolve) => {
+              const opts = {
+                hostname:'sheets.googleapis.com', path, method:'POST',
+                headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)}
+              };
+              const r = https.request(opts,(res2)=>{let d='';res2.on('data',c=>d+=c);res2.on('end',()=>resolve(d));});
+              r.on('error',resolve); r.write(body); r.end();
+            });
+            if (update.log) await appendAgentLog(token, update.log.role, update.log.tab, update.log.field, update.log.old, update.log.new, update.log.summary);
+            updatesExecuted.push(update.log?.summary || 'Row appended to ' + update.tab);
 
-          // If update has a stepId, use smart write to find the correct row
-          if (update.stepId && update.column) {
-            // stepId = the Step ID to search for (e.g. "2.6")
-            // column = column number to write to (e.g. 7 = column G = Actual End)
-            // Column map: 1=StepID, 2=Name, 3=Cat, 4=PlannedStart, 5=PlannedEnd, 6=ActualStart, 7=ActualEnd, 8=Duration, 9=Status, 10=COH, 11=Deps, 12=Notes
-            success = await smartWrite(
-              token,
-              update.tab,
-              0, // Column A = Step ID (0-indexed)
-              update.stepId,
-              update.column,
-              update.value,
-              update.log
-            );
+          } else if (update.stepId && update.column) {
+            // Smart write by step ID
+            const ok = await smartWrite(token, update.tab, update.stepId, update.column, update.value, update.log);
+            if (ok) updatesExecuted.push(update.log?.summary || `Updated ${update.tab}`);
+
           } else if (update.range) {
-            // Fallback to direct range write
-            await writeToSheet(update.tab, update.range, [[update.value]], token);
-            if (update.log) {
-              await appendAgentLog(
-                token,
-                update.log.role || 'BUILDER',
-                update.log.tab,
-                update.log.field,
-                update.log.old,
-                update.log.new,
-                update.log.summary
-              );
-            }
-            success = true;
+            // Direct cell write
+            await writeCell(update.tab, update.range, update.value, token);
+            if (update.log) await appendAgentLog(token, update.log.role, update.log.tab, update.log.field, update.log.old, update.log.new, update.log.summary);
+            updatesExecuted.push(update.log?.summary || `Updated ${update.tab}`);
           }
 
-          if (success !== false) {
-            updatesExecuted.push(update.log ? update.log.summary : update.tab);
-          }
-        } catch (e) {
-          console.error('Sheet write error:', e.message);
-        }
+        } catch(e) { console.error('Update error:', e.message); }
       }
 
-      // Remove ALL JSON blocks from reply shown to user
+      // Remove all SHEET_UPDATE blocks from visible reply
       reply = reply.replace(/<SHEET_UPDATE>[\s\S]*?<\/SHEET_UPDATE>/g, '').trim();
 
       if (updatesExecuted.length > 0) {
-        reply += `\n\n✅ **Sheet updated (${updatesExecuted.length} change${updatesExecuted.length > 1 ? 's' : ''})** — check the 🤖 Agent Log tab to verify.`;
+        reply += `\n\n✅ **${updatesExecuted.length} sheet update${updatesExecuted.length>1?'s':''} logged** — check 🤖 Agent Log to verify.`;
       }
-    } else if (updateMatches.length > 0 && !token) {
-      // Remove blocks even if no token
+    } else {
+      // Still remove any blocks even if no token
       reply = reply.replace(/<SHEET_UPDATE>[\s\S]*?<\/SHEET_UPDATE>/g, '').trim();
-      reply += '\n\n⚠️ Sheet write unavailable — update manually.';
     }
 
-    // Return modified response
-    const responseBody = {
-      ...claudeResponse.body,
-      content: [{ type: 'text', text: reply }]
-    };
+    // Log BUILDER's response to conversation log
+    if (token) {
+      await logConversation(token, 'BUILDER', '—', 'RESPONSE',
+        reply.replace(/\*\*/g,'').substring(0, 500),
+        sessionId
+      );
+    }
 
-    return res.status(200).json(responseBody);
+    // Return response
+    return res.status(200).json({
+      ...claudeData.body,
+      content: [{ type:'text', text: reply }]
+    });
 
-  } catch (error) {
+  } catch(error) {
     console.error('Handler error:', error);
     return res.status(500).json({ error: error.message || 'Internal server error' });
   }
