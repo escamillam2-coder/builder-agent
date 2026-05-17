@@ -223,14 +223,22 @@ CONTRACTOR RULES: Hold 10% retention. No verbal change orders. Verify TX license
 
 LONG LEAD URGENCY: Windows (4-10 wk), Cabinets (8-12 wk), Flooring (3-6 wk), Fixtures (4-8 wk).
 
-SHEET WRITE CAPABILITY: You can now update the Google Sheet directly. When Dad or Mom reports something happened, update the relevant tab. Always confirm what you updated. Log every change in the Agent Log.
+SHEET WRITE CAPABILITY: You can update the Google Sheet directly. When someone reports something happened, update the relevant tab and log it.
 
-WHEN UPDATING THE SHEET — respond with a JSON block at the END of your message in this exact format:
+WHEN UPDATING THE SHEET — add one <SHEET_UPDATE> block per change at the very END of your message. Each block must be valid JSON on a single line:
+
 <SHEET_UPDATE>
 {"tab": "📋 Detailed Phase Plan", "range": "I8", "value": "✅ COMPLETE", "log": {"role": "Dad", "tab": "📋 Detailed Phase Plan", "field": "Step 2.6 Status", "old": "⚠️ VERIFY", "new": "✅ COMPLETE", "summary": "Dad confirmed post-tension stressing happened March 13"}}
 </SHEET_UPDATE>
 
-Only include SHEET_UPDATE when you are actually updating something. Do not include it for general questions.
+IMPORTANT RULES FOR SHEET UPDATES:
+- Only include SHEET_UPDATE when something actually changed — not for questions
+- Each update block must contain valid JSON — no trailing commas, no line breaks inside JSON
+- For the Detailed Phase Plan, status is in column I — use ranges like I8, I9, I10 etc.
+- For Inspections tab, result is in column F — use ranges like F5, F6 etc.
+- For Agent Log, always use appendAgentLog (handled automatically)
+- You can include multiple SHEET_UPDATE blocks if multiple things changed
+- After all updates, tell the user what you changed in plain language
 
 WHEN A DELAY IS REPORTED: Show ripple impact, suggest recovery options, identify who's affected, offer to draft a message, note budget impact, and update the sheet.
 
@@ -339,37 +347,47 @@ Sheet write is ${token ? 'ENABLED — you can update the sheet' : 'read-only mod
     // Extract reply text
     let reply = claudeResponse.body.content.map(c => c.text || '').join('');
 
-    // Parse and execute any sheet updates
-    const updateMatch = reply.match(/<SHEET_UPDATE>([\s\S]*?)<\/SHEET_UPDATE>/);
-    if (updateMatch && token) {
-      try {
-        const update = JSON.parse(updateMatch[1].trim());
+    // Parse and execute ALL sheet updates (handles multiple per response)
+    const updateMatches = [...reply.matchAll(/<SHEET_UPDATE>([\s\S]*?)<\/SHEET_UPDATE>/g)];
+    const updatesExecuted = [];
 
-        // Write to the sheet
-        await writeToSheet(update.tab, update.range, [[update.value]], token);
+    if (updateMatches.length > 0 && token) {
+      for (const match of updateMatches) {
+        try {
+          const update = JSON.parse(match[1].trim());
 
-        // Log the change
-        if (update.log) {
-          await appendAgentLog(
-            token,
-            update.log.role || 'BUILDER',
-            update.log.tab,
-            update.log.field,
-            update.log.old,
-            update.log.new,
-            update.log.summary
-          );
+          // Write to the sheet
+          await writeToSheet(update.tab, update.range, [[update.value]], token);
+
+          // Log the change
+          if (update.log) {
+            await appendAgentLog(
+              token,
+              update.log.role || 'BUILDER',
+              update.log.tab,
+              update.log.field,
+              update.log.old,
+              update.log.new,
+              update.log.summary
+            );
+          }
+
+          updatesExecuted.push(update.log ? update.log.summary : update.tab);
+        } catch (e) {
+          console.error('Sheet write error:', e.message);
         }
-
-        // Remove the JSON block from the reply shown to user
-        reply = reply.replace(/<SHEET_UPDATE>[\s\S]*?<\/SHEET_UPDATE>/, '').trim();
-        reply += '\n\n✅ **Sheet updated** — check the Agent Log tab to verify.';
-
-      } catch (e) {
-        console.error('Sheet write error:', e.message);
-        reply = reply.replace(/<SHEET_UPDATE>[\s\S]*?<\/SHEET_UPDATE>/, '').trim();
-        reply += '\n\n⚠️ Sheet update attempted but encountered an error. Please update manually.';
       }
+
+      // Remove ALL JSON blocks from reply shown to user
+      reply = reply.replace(/<SHEET_UPDATE>[\s\S]*?<\/SHEET_UPDATE>/g, '').trim();
+
+      if (updatesExecuted.length > 0) {
+        reply += `\n\n✅ **Sheet updated (${updatesExecuted.length} change${updatesExecuted.length > 1 ? 's' : ''})** — check the 🤖 Agent Log tab to verify.`;
+      }
+    } else if (updateMatches.length > 0 && !token) {
+      // Remove blocks even if no token
+      reply = reply.replace(/<SHEET_UPDATE>[\s\S]*?<\/SHEET_UPDATE>/g, '').trim();
+      reply += '\n\n⚠️ Sheet write unavailable — update manually.';
     }
 
     // Return modified response
